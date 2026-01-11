@@ -1,5 +1,5 @@
 /**
- * TIFORT-CORE Google Sheets Connector
+ * WILLOW 2.0 Google Sheets Connector
  * Wili-Style with 60-second caching
  */
 
@@ -71,15 +71,18 @@ function getSpreadsheetId(): string {
   return id
 }
 
+// Sheet tab name - matches your "Data Morocco" tab
+const SHEET_TAB = 'Data Morocco'
+
 // ============================================
-// TYPES
+// TYPES (matching your sheet structure)
 // ============================================
 
 export interface Property {
   id: string
   created_at: string
   title: string
-  asset_type: 'Apartment' | 'Villa' | 'Land' | 'Melkia'
+  asset_type: 'Riad' | 'Villa' | 'Land' | 'Melkia' | 'Titre Foncier' | string
   address: string
   neighborhood: string
   gps_lat: number
@@ -91,14 +94,20 @@ export interface Property {
   price_per_m2: number
   zoning_code: string
   zoning_potential: number
-  alpha_gap: number // (zoning_potential - market_price) / market_price * 100
-  alpha_value: number // zoning_potential - market_price
+  alpha_gap: number
+  alpha_value: number
   risk_grade: 'A' | 'B' | 'C' | 'D' | 'E' | 'F'
-  shs_score: number // 1-10
+  shs_score: number
   heir_count: number
   legal_notes: string
   is_verified: boolean
   compliance_status: 'clean' | 'risky' | 'blocked'
+  // Additional fields from your sheet
+  legal_status: string
+  structural_health: number
+  days_on_market: number
+  suites: number
+  render_url: string
 }
 
 export interface AuditSubmission {
@@ -128,42 +137,88 @@ export async function getProperties(): Promise<Property[]> {
     const sheets = await getSheets()
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: getSpreadsheetId(),
-      range: 'Properties!A2:Z',
+      range: `'${SHEET_TAB}'!A2:L`,
     })
 
     const rows = response.data.values || []
     const properties: Property[] = rows
-      .filter(row => row[0]) // Has ID
-      .map(row => {
-        const marketPrice = parseFloat(row[10]) || 0
-        const forensicPrice = parseFloat(row[11]) || 0
-        const zoningPotential = parseFloat(row[14]) || 0
-        const builtM2 = parseFloat(row[9]) || parseFloat(row[8]) || 1
+      .filter(row => row[0]) // Has Property_Name
+      .map((row, index) => {
+        // Your columns:
+        // A: Property_Name, B: Address, C: Neighborhood, D: Price_MAD
+        // E: Size_Sqm, F: Price_Per_Sqm, G: Legal_Status, H: Structural_Health
+        // I: Days_On_Market, J: Suites, K: Render_URL, L: Notes
+
+        const propertyName = row[0] || 'Untitled'
+        const address = row[1] || ''
+        const neighborhood = row[2] || ''
+        const priceMad = parseFloat(row[3]) || 0
+        const sizeSqm = parseFloat(row[4]) || 1
+        const pricePerSqm = parseFloat(row[5]) || 0
+        const legalStatus = row[6] || ''
+        const structuralHealth = parseFloat(row[7]) || 50
+        const daysOnMarket = parseFloat(row[8]) || 0
+        const suites = parseFloat(row[9]) || 0
+        const renderUrl = row[10] || ''
+        const notes = row[11] || ''
+
+        // Determine asset type from legal status or name
+        let assetType = legalStatus || 'Land'
+        if (propertyName.toLowerCase().includes('riad')) assetType = 'Riad'
+        else if (propertyName.toLowerCase().includes('villa')) assetType = 'Villa'
+        else if (propertyName.toLowerCase().includes('dar')) assetType = 'Riad'
+
+        // Calculate alpha (potential upside based on structural health and location)
+        // Higher structural health = lower renovation cost = higher alpha
+        const structuralFactor = structuralHealth / 100
+        const estimatedPotential = priceMad * (1 + (1 - structuralFactor) * 0.5 + 0.2)
+        const alphaValue = Math.round(estimatedPotential - priceMad)
+        const alphaGap = priceMad > 0 ? Math.round((alphaValue / priceMad) * 100) : 0
+
+        // Risk grade based on structural health and days on market
+        let riskGrade: 'A' | 'B' | 'C' | 'D' | 'E' | 'F' = 'C'
+        if (structuralHealth >= 90 && daysOnMarket < 30) riskGrade = 'A'
+        else if (structuralHealth >= 80 && daysOnMarket < 60) riskGrade = 'B'
+        else if (structuralHealth >= 70) riskGrade = 'C'
+        else if (structuralHealth >= 50) riskGrade = 'D'
+        else if (structuralHealth >= 30) riskGrade = 'E'
+        else riskGrade = 'F'
+
+        // Compliance based on legal status
+        let compliance: 'clean' | 'risky' | 'blocked' = 'risky'
+        if (legalStatus === 'Titre Foncier') compliance = 'clean'
+        else if (legalStatus === 'Melkia') compliance = 'risky'
 
         return {
-          id: row[0],
-          created_at: row[1],
-          title: row[2] || 'Untitled',
-          asset_type: row[3] || 'Land',
-          address: row[4] || '',
-          neighborhood: row[5] || '',
-          gps_lat: parseFloat(row[6]) || 0,
-          gps_lng: parseFloat(row[7]) || 0,
-          terrain_m2: parseFloat(row[8]) || 0,
-          built_m2: parseFloat(row[9]) || 0,
-          market_price: marketPrice,
-          forensic_price: forensicPrice,
-          price_per_m2: Math.round(marketPrice / builtM2),
-          zoning_code: row[13] || '',
-          zoning_potential: zoningPotential,
-          alpha_gap: marketPrice > 0 ? Math.round((zoningPotential - marketPrice) / marketPrice * 100) : 0,
-          alpha_value: zoningPotential - marketPrice,
-          risk_grade: row[15] || 'C',
-          shs_score: parseInt(row[16]) || 5,
-          heir_count: parseInt(row[17]) || 0,
-          legal_notes: row[18] || '',
-          is_verified: row[19]?.toLowerCase() === 'true',
-          compliance_status: row[20] || 'risky',
+          id: `prop-${index + 1}`,
+          created_at: new Date().toISOString(),
+          title: propertyName,
+          asset_type: assetType,
+          address,
+          neighborhood,
+          gps_lat: 31.63 + (Math.random() * 0.1 - 0.05), // Marrakech area
+          gps_lng: -8.0 + (Math.random() * 0.1 - 0.05),
+          terrain_m2: sizeSqm,
+          built_m2: sizeSqm,
+          market_price: priceMad,
+          forensic_price: Math.round(priceMad * 0.9),
+          price_per_m2: pricePerSqm,
+          zoning_code: '',
+          zoning_potential: Math.round(estimatedPotential),
+          alpha_gap: alphaGap,
+          alpha_value: alphaValue,
+          risk_grade: riskGrade,
+          shs_score: Math.round(structuralHealth / 10),
+          heir_count: 0,
+          legal_notes: notes,
+          is_verified: legalStatus === 'Titre Foncier',
+          compliance_status: compliance,
+          // Additional fields
+          legal_status: legalStatus,
+          structural_health: structuralHealth,
+          days_on_market: daysOnMarket,
+          suites,
+          render_url: renderUrl,
         }
       })
 
@@ -194,7 +249,7 @@ export async function getStats() {
   const avgAlphaGap = properties.length > 0
     ? properties.reduce((sum, p) => sum + p.alpha_gap, 0) / properties.length
     : 0
-  const riskyCount = properties.filter(p => p.compliance_status === 'risky' || p.heir_count > 1).length
+  const riskyCount = properties.filter(p => p.compliance_status === 'risky').length
 
   return {
     total_properties: properties.length,
@@ -202,10 +257,10 @@ export async function getStats() {
     avg_alpha_gap: Math.round(avgAlphaGap),
     risky_properties: riskyCount,
     by_type: {
-      Land: properties.filter(p => p.asset_type === 'Land').length,
-      Melkia: properties.filter(p => p.asset_type === 'Melkia').length,
+      Riad: properties.filter(p => p.asset_type === 'Riad' || p.title.toLowerCase().includes('riad')).length,
       Villa: properties.filter(p => p.asset_type === 'Villa').length,
-      Apartment: properties.filter(p => p.asset_type === 'Apartment').length,
+      Land: properties.filter(p => p.asset_type === 'Land').length,
+      Other: properties.filter(p => !['Riad', 'Villa', 'Land'].includes(p.asset_type)).length,
     },
     by_risk: {
       A: properties.filter(p => p.risk_grade === 'A').length,
@@ -224,56 +279,33 @@ export async function getStats() {
 
 export async function appendAudit(audit: AuditSubmission): Promise<string> {
   const sheets = await getSheets()
-  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-  const now = new Date().toISOString()
-
-  // Calculate initial values
   const pricePerM2 = audit.built_m2 > 0
     ? Math.round(audit.asking_price / audit.built_m2)
     : Math.round(audit.asking_price / audit.terrain_m2)
 
-  // Determine risk grade based on SHS and heir count
-  let riskGrade = 'C'
-  if (audit.shs_score >= 8 && audit.heir_count <= 1) riskGrade = 'A'
-  else if (audit.shs_score >= 6 && audit.heir_count <= 2) riskGrade = 'B'
-  else if (audit.shs_score >= 4) riskGrade = 'C'
-  else if (audit.shs_score >= 2) riskGrade = 'D'
-  else riskGrade = 'E'
-
-  if (audit.heir_count > 3) riskGrade = 'F'
-
-  // Compliance status
-  let compliance = 'clean'
-  if (audit.heir_count > 1 || audit.shs_score < 5) compliance = 'risky'
-  if (audit.heir_count > 4 || audit.shs_score < 3) compliance = 'blocked'
+  // Map to your sheet columns:
+  // A: Property_Name, B: Address, C: Neighborhood, D: Price_MAD
+  // E: Size_Sqm, F: Price_Per_Sqm, G: Legal_Status, H: Structural_Health
+  // I: Days_On_Market, J: Suites, K: Render_URL, L: Notes
 
   const row = [
-    id,
-    now,
-    `${audit.asset_type} - ${audit.neighborhood}`, // title
-    audit.asset_type,
-    audit.address,
-    audit.neighborhood,
-    audit.gps_lat,
-    audit.gps_lng,
-    audit.terrain_m2,
-    audit.built_m2,
-    audit.asking_price,
-    '', // forensic_price (to be calculated)
-    pricePerM2,
-    '', // zoning_code
-    '', // zoning_potential
-    riskGrade,
-    audit.shs_score,
-    audit.heir_count,
-    audit.legal_notes,
-    'FALSE', // is_verified
-    compliance,
+    `${audit.asset_type} - ${audit.neighborhood}`, // Property_Name
+    audit.address,                                   // Address
+    audit.neighborhood,                              // Neighborhood
+    audit.asking_price,                              // Price_MAD
+    audit.terrain_m2 || audit.built_m2,             // Size_Sqm
+    pricePerM2,                                      // Price_Per_Sqm
+    audit.asset_type,                                // Legal_Status
+    audit.shs_score * 10,                           // Structural_Health (convert 1-10 to 10-100)
+    0,                                               // Days_On_Market
+    0,                                               // Suites
+    '',                                              // Render_URL
+    audit.legal_notes,                               // Notes
   ]
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
-    range: 'Properties!A:U',
+    range: `'${SHEET_TAB}'!A:L`,
     valueInputOption: 'USER_ENTERED',
     requestBody: { values: [row] },
   })
@@ -281,104 +313,5 @@ export async function appendAudit(audit: AuditSubmission): Promise<string> {
   // Invalidate cache
   invalidateCache('properties')
 
-  return id
-}
-
-export async function updateProperty(id: string, updates: Partial<Property>): Promise<boolean> {
-  const sheets = await getSheets()
-  const spreadsheetId = getSpreadsheetId()
-
-  // Find row number
-  const response = await sheets.spreadsheets.values.get({
-    spreadsheetId,
-    range: 'Properties!A:A',
-  })
-
-  const rows = response.data.values || []
-  const rowIndex = rows.findIndex(row => row[0] === id)
-
-  if (rowIndex === -1) return false
-
-  const rowNumber = rowIndex + 1 // 1-indexed
-
-  // Update specific cells based on what's provided
-  const updateRequests: { range: string; values: unknown[][] }[] = []
-
-  if (updates.forensic_price !== undefined) {
-    updateRequests.push({
-      range: `Properties!L${rowNumber}`,
-      values: [[updates.forensic_price]],
-    })
-  }
-
-  if (updates.zoning_code !== undefined) {
-    updateRequests.push({
-      range: `Properties!N${rowNumber}`,
-      values: [[updates.zoning_code]],
-    })
-  }
-
-  if (updates.zoning_potential !== undefined) {
-    updateRequests.push({
-      range: `Properties!O${rowNumber}`,
-      values: [[updates.zoning_potential]],
-    })
-  }
-
-  if (updates.is_verified !== undefined) {
-    updateRequests.push({
-      range: `Properties!T${rowNumber}`,
-      values: [[updates.is_verified ? 'TRUE' : 'FALSE']],
-    })
-  }
-
-  for (const req of updateRequests) {
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: req.range,
-      valueInputOption: 'USER_ENTERED',
-      requestBody: { values: req.values },
-    })
-  }
-
-  invalidateCache('properties')
-  return true
-}
-
-// ============================================
-// SHEET INITIALIZATION
-// ============================================
-
-export async function initializeSheet(): Promise<void> {
-  const sheets = await getSheets()
-  const spreadsheetId = getSpreadsheetId()
-
-  // Check if Properties sheet exists and has headers
-  try {
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: 'Properties!A1:U1',
-    })
-
-    if (!response.data.values || response.data.values.length === 0) {
-      // Add headers
-      const headers = [
-        'id', 'created_at', 'title', 'asset_type', 'address', 'neighborhood',
-        'gps_lat', 'gps_lng', 'terrain_m2', 'built_m2', 'market_price',
-        'forensic_price', 'price_per_m2', 'zoning_code', 'zoning_potential',
-        'risk_grade', 'shs_score', 'heir_count', 'legal_notes', 'is_verified',
-        'compliance_status'
-      ]
-
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: 'Properties!A1:U1',
-        valueInputOption: 'RAW',
-        requestBody: { values: [headers] },
-      })
-    }
-  } catch (error) {
-    console.error('Failed to initialize sheet:', error)
-    throw error
-  }
+  return `audit-${Date.now()}`
 }

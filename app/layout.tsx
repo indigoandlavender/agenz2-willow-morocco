@@ -16,9 +16,9 @@ const ibmPlexMono = IBM_Plex_Mono({
 })
 
 export const metadata: Metadata = {
-  title: 'TIFORT | Forensic Real Estate Intelligence',
-  description: 'Proprietary data on Moroccan real estate. Alpha Gap analysis, SHS scoring, legal risk assessment.',
-  keywords: ['morocco', 'real estate', 'marrakech', 'investment', 'forensic', 'alpha'],
+  title: 'Willow | Real Estate Intelligence',
+  description: 'Proprietary data on Moroccan real estate. Alpha Gap analysis, structural health scoring, legal risk assessment.',
+  keywords: ['morocco', 'real estate', 'marrakech', 'investment', 'riad', 'alpha'],
 }
 
 export default function RootLayout({
