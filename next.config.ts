@@ -1,20 +1,14 @@
 import type { NextConfig } from 'next'
 
 const nextConfig: NextConfig = {
-  experimental: {
-    serverActions: {
-      bodySizeLimit: '2mb',
-    },
-  },
   images: {
     remotePatterns: [
       {
         protocol: 'https',
-        hostname: '*.supabase.co',
+        hostname: '*.googleapis.com',
       },
     ],
   },
-  // Mapbox GL requires this
   transpilePackages: ['mapbox-gl'],
 }
 

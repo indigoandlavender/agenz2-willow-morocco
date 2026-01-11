@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, Playfair_Display, JetBrains_Mono } from 'next/font/google'
+import { Inter, IBM_Plex_Mono } from 'next/font/google'
 import '@/styles/globals.css'
 
 const inter = Inter({
@@ -8,29 +8,17 @@ const inter = Inter({
   variable: '--font-inter',
 })
 
-const playfair = Playfair_Display({
+const ibmPlexMono = IBM_Plex_Mono({
   subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
   display: 'swap',
-  variable: '--font-playfair',
-})
-
-const jetbrains = JetBrains_Mono({
-  subsets: ['latin'],
-  display: 'swap',
-  variable: '--font-jetbrains',
+  variable: '--font-mono',
 })
 
 export const metadata: Metadata = {
-  title: 'TIFORT-CORE | Forensic Real Estate Intelligence',
-  description: 'Institutional-grade property verification and valuation for the Moroccan market. Beyond probability — forensic certainty.',
-  keywords: ['real estate', 'morocco', 'marrakech', 'property', 'investment', 'forensic', 'valuation'],
-  authors: [{ name: 'TIFORT' }],
-  openGraph: {
-    title: 'TIFORT-CORE | Forensic Real Estate Intelligence',
-    description: 'Institutional-grade property verification and valuation for the Moroccan market.',
-    type: 'website',
-    locale: 'en_US',
-  },
+  title: 'TIFORT | Forensic Real Estate Intelligence',
+  description: 'Proprietary data on Moroccan real estate. Alpha Gap analysis, SHS scoring, legal risk assessment.',
+  keywords: ['morocco', 'real estate', 'marrakech', 'investment', 'forensic', 'alpha'],
 }
 
 export default function RootLayout({
@@ -39,11 +27,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html
-      lang="en"
-      className={`${inter.variable} ${playfair.variable} ${jetbrains.variable}`}
-    >
-      <body className="min-h-screen bg-primary-50 antialiased">
+    <html lang="en" className={`${inter.variable} ${ibmPlexMono.variable} dark`}>
+      <body className="min-h-screen bg-[#0A0A0A] text-zinc-100 antialiased">
         {children}
       </body>
     </html>
